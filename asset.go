@@ -1,9 +1,6 @@
 package halopsa_client_go
 
 import (
-	"net/http"
-	"net/url"
-
 	"github.com/bart-lute/halopsa-client-go/models"
 )
 
@@ -38,19 +35,10 @@ var assetGetIdParameters = []string{
 
 func (c *Client) GetAssets(params *map[string]string) *map[int]models.Asset {
 
-	path := getApiPath("asset")
-	var body url.Values
-	var headers map[string]string
+	req := newRequest("Asset")
+	req.parameters = getUrlValues(params, &assetGetParameters)
 
-	urlValues, err := getUrlValues(params, &assetGetParameters)
-	if err != nil {
-		panic(err)
-	}
-
-	pagedItems, err := c.getPaginatedItems(path, urlValues, body, headers)
-	if err != nil {
-		panic(err)
-	}
+	pagedItems := c.getPaginatedItems(&req)
 
 	return &pagedItems.Assets
 
@@ -58,24 +46,15 @@ func (c *Client) GetAssets(params *map[string]string) *map[int]models.Asset {
 
 func (c *Client) GetAllAssetTypes() *map[int]models.AssetType {
 
+	req := newRequest("AssetType")
+
+	response := c.doRequest(&req)
+	var assetTypes []models.AssetType
+	getResponseObj(response, &assetTypes)
+
+	// Convert to Map
 	assetTypesMap := make(map[int]models.AssetType)
-
-	path := getApiPath("AssetType")
-	var body url.Values
-	var headers map[string]string
-
-	response, err := c.doRequest(http.MethodGet, path, nil, &body, headers)
-	if err != nil {
-		panic(err)
-	}
-
-	var assetTypes *[]models.AssetType
-	err = getResponseObj(response, &assetTypes)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, assetType := range *assetTypes {
+	for _, assetType := range assetTypes {
 		assetTypesMap[assetType.ID] = assetType
 	}
 

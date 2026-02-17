@@ -1,9 +1,6 @@
 package halopsa_client_go
 
 import (
-	"fmt"
-	"net/url"
-
 	"github.com/bart-lute/halopsa-client-go/models"
 )
 
@@ -21,20 +18,10 @@ var clientGetParameters = []string{
 
 func (c *Client) GetClients(params *map[string]string) *map[int]models.Client {
 
-	path := fmt.Sprintf("%s/%s", apiPrefix, "client")
-	var body url.Values
-	var headers map[string]string
+	req := newRequest("Client")
+	req.parameters = getUrlValues(params, &assetGetParameters)
 
-	urlValues, err := getUrlValues(params, &assetGetParameters)
-	if err != nil {
-		panic(err)
-	}
-
-	pagedItems, err := c.getPaginatedItems(path, urlValues, body, headers)
-	if err != nil {
-		panic(err)
-	}
-
+	pagedItems := c.getPaginatedItems(&req)
 	return &pagedItems.Clients
 
 }

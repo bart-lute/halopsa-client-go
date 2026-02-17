@@ -33,6 +33,14 @@ type genericPagedItems struct {
 	Users   map[int]models.User
 }
 
+type requestObject struct {
+	method     string
+	path       string
+	parameters *url.Values
+	body       *url.Values
+	headers    map[string]string
+}
+
 type Client struct {
 	BaseURL    string
 	ApiKey     string
@@ -54,7 +62,7 @@ func Init(baseUrl string, apiKey string) *Client {
 	return client
 }
 
-func getResponseObj(response *http.Response, obj any) error {
+func getResponseObj(response *http.Response, obj any) {
 
 	// make sure to close the body on exit or err
 	defer func(Body io.ReadCloser) {
@@ -66,34 +74,33 @@ func getResponseObj(response *http.Response, obj any) error {
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return err
+		panic(err)
 	}
 
 	err = json.Unmarshal(body, obj)
 	if err != nil {
-		return err
+		panic(err)
 	}
-	return nil
 }
 
-// doRequest used to make a request to the Halopsa API
+// doRequest used to make a request to the HaloPSA API
 // Note: a map is always passed as a reference
-func (c *Client) doRequest(method string, path string, parameters *url.Values, body *url.Values, headers map[string]string) (*http.Response, error) {
+func (c *Client) doRequest(req *requestObject) *http.Response {
 
-	if headers == nil {
-		headers = map[string]string{}
+	if req.headers == nil {
+		req.headers = make(map[string]string)
 	}
 
 	// Add the API Key Header
-	headers["X-Halo-Api-Key"] = c.ApiKey
+	req.headers["X-Halo-Api-Key"] = c.ApiKey
 
-	u, err := url.Parse(fmt.Sprintf("%s/%s", c.BaseURL, path))
+	u, err := url.Parse(fmt.Sprintf("%s/%s", c.BaseURL, req.path))
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	if parameters != nil {
+	if req.parameters != nil {
 		q := u.Query()
-		for key, values := range *parameters {
+		for key, values := range *req.parameters {
 			for _, value := range values {
 				q.Add(key, value)
 			}
@@ -103,43 +110,49 @@ func (c *Client) doRequest(method string, path string, parameters *url.Values, b
 
 	// The body to send with the request (can be nil)
 	var bodyReader io.Reader
-	if body != nil {
-		bodyReader = strings.NewReader(body.Encode())
+	if req.body != nil {
+		bodyReader = strings.NewReader(req.body.Encode())
 	}
 
-	slog.Debug(fmt.Sprintf("Sending %s request to %s", method, u.String()))
-	request, err := http.NewRequest(method, u.String(), bodyReader)
+	slog.Debug(fmt.Sprintf("Sending %s request to %s", req.method, u.String()))
+	request, err := http.NewRequest(req.method, u.String(), bodyReader)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	if headers != nil {
-		for key, value := range headers {
+	if req.headers != nil {
+		for key, value := range req.headers {
 			request.Header.Set(key, value)
 		}
 	}
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	slog.Debug(fmt.Sprintf("Got response: %s", response.Status))
 	if response.StatusCode != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", response.StatusCode)
+		panic(fmt.Errorf("unexpected status code: %d", response.StatusCode))
 	}
 
-	return response, nil
+	return response
 }
 
-func getApiPath(path string) string {
-	return fmt.Sprintf("%s/%s", apiPrefix, path)
+func newRequest(path string) requestObject {
+	return requestObject{
+		path:       fmt.Sprintf("%s/%s", apiPrefix, path),
+		method:     http.MethodGet,
+		parameters: nil,
+		body:       nil,
+		headers:    nil,
+	}
 }
 
-func getUrlValues(params *map[string]string, validParams *[]string) (*url.Values, error) {
+func getUrlValues(params *map[string]string, validParams *[]string) *url.Values {
 	for key := range *params {
 		if !slices.Contains(*validParams, key) {
-			return nil, fmt.Errorf("invalid parameter: %s", key)
+			panic(fmt.Errorf("invalid parameter: %s", key))
 		}
 	}
 
@@ -147,7 +160,7 @@ func getUrlValues(params *map[string]string, validParams *[]string) (*url.Values
 	for key, value := range *params {
 		urlValues.Set(key, value)
 	}
-	return &urlValues, nil
+	return &urlValues
 }
 
 func injectPaginationValues(values *url.Values) {
@@ -157,9 +170,9 @@ func injectPaginationValues(values *url.Values) {
 	values.Set("page_no", "1")
 }
 
-func (c *Client) getPaginatedItems(path string, urlValues *url.Values, body url.Values, headers map[string]string) (*genericPagedItems, error) {
+func (c *Client) getPaginatedItems(req *requestObject) *genericPagedItems {
 
-	injectPaginationValues(urlValues)
+	injectPaginationValues(req.parameters)
 
 	pagedItems := &genericPagedItems{
 		Assets:  make(map[int]models.Asset),
@@ -168,16 +181,10 @@ func (c *Client) getPaginatedItems(path string, urlValues *url.Values, body url.
 	}
 
 	for {
-		response, err := c.doRequest(http.MethodGet, path, urlValues, &body, headers)
-		if err != nil {
-			return nil, err
-		}
+		response := c.doRequest(req)
 
 		var gp genericPage
-		err = getResponseObj(response, &gp)
-		if err != nil {
-			return nil, err
-		}
+		getResponseObj(response, &gp)
 
 		// Assets
 		for _, asset := range gp.Assets {
@@ -197,9 +204,9 @@ func (c *Client) getPaginatedItems(path string, urlValues *url.Values, body url.
 		if gp.PageNo*gp.PageSize >= gp.RecordCount {
 			break
 		}
-		urlValues.Set("page_no", fmt.Sprintf("%d", gp.PageNo+1))
+		req.parameters.Set("page_no", fmt.Sprintf("%d", gp.PageNo+1))
 	}
 
-	return pagedItems, nil
+	return pagedItems
 
 }

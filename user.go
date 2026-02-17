@@ -1,9 +1,6 @@
 package halopsa_client_go
 
 import (
-	"fmt"
-	"net/url"
-
 	"github.com/bart-lute/halopsa-client-go/models"
 )
 
@@ -50,21 +47,10 @@ advanced_search=[{"filter_name":"firstname","filter_type":4,"filter_value":"Admi
 
 func (c *Client) GetUsers(params *map[string]string) *map[int]models.User {
 
-	path := fmt.Sprintf("%s/%s", apiPrefix, "users")
+	req := newRequest("Users")
+	req.parameters = getUrlValues(params, &userGetParameters)
 
-	var body url.Values
-	var headers map[string]string
-
-	urlValues, err := getUrlValues(params, &userGetParameters)
-	if err != nil {
-		panic(err)
-	}
-
-	pagedItems, err := c.getPaginatedItems(path, urlValues, body, headers)
-	if err != nil {
-		panic(err)
-	}
-
+	pagedItems := c.getPaginatedItems(&req)
 	return &pagedItems.Users
-	
+
 }
